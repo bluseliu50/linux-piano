@@ -54,12 +54,20 @@ properties:
       - const: hfi
       - const: gmu
 
+  # Experimental (bp/gpu-v1, piano): some SoCs manage the GX rail outside
+  # of a gpucc GDSC (e.g. SM8750 via a dedicated gx clock-control block
+  # with no upstream driver). The a8xx GMU driver treats gx as optional
+  # (recovery-only), so allow cx-only GMU nodes.
   power-domains:
+    minItems: 1
+    maxItems: 2
     items:
       - description: CX power domain
       - description: GX power domain
 
   power-domain-names:
+    minItems: 1
+    maxItems: 2
     items:
       - const: cx
       - const: gx

@@ -22,6 +22,7 @@
 
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/clock/qcom,sm8750-gpucc.h>
 #include "sm8750.dtsi"
 #include "pm8010.dtsi"
 #include "pm8550.dtsi"
@@ -805,4 +806,225 @@
 	phys = <&pmih0108_eusb2_repeater>;
 
 	status = "okay";
+};
+
+/*
+ * Adreno 830 (A8x family) GPU stack. EXPERIMENTAL bp/gpu-v1 branch:
+ * do not merge without real-device validation.
+ *
+ * Register map, IRQs (GPU 300, GMU hfi/gmu 304/305), SMMU @0x3da0000
+ * and zap region provenance: stock vbdtb-00.dts (local/dtb-downstream),
+ * re-shaped onto upstream drm/msm DT conventions (gpu.yaml/gmu.yaml).
+ *
+ * Known gap: stock SM8750 controls the GX domain through a dedicated
+ * "qcom,sun-gx_clkctl" block (0x3d68024) with vdd_gx, which has no
+ * upstream driver; drivers/clk/qcom/gpucc-sm8750.c exposes only
+ * GPU_CC_CX_GDSC. The a8xx GMU driver treats the gx power domain as
+ * optional (recovery-only), so this node votes cx only and the local
+ * gmu.yaml copy was relaxed accordingly (see commit message).
+ */
+&soc {
+	gpucc: clock-controller@3d90000 {
+		compatible = "qcom,sm8750-gpucc";
+		reg = <0x0 0x03d90000 0x0 0x9800>;		/* (R) */
+
+		clocks = <&bi_tcxo_div2>,
+			 <&gcc GCC_GPU_GPLL0_CLK_SRC>,
+			 <&gcc GCC_GPU_GPLL0_DIV_CLK_SRC>;
+
+		power-domains = <&rpmhpd RPMHPD_MX>,
+				<&rpmhpd RPMHPD_CX>;
+		required-opps = <&rpmhpd_opp_low_svs>,
+				<&rpmhpd_opp_low_svs>;
+
+		#clock-cells = <1>;
+		#reset-cells = <1>;
+		#power-domain-cells = <1>;
+	};
+
+	adreno_smmu: iommu@3da0000 {
+		compatible = "qcom,sm8750-smmu-500", "qcom,adreno-smmu",
+			     "qcom,smmu-500", "arm,mmu-500";
+		reg = <0x0 0x03da0000 0x0 0x40000>;		/* (R) */
+		#iommu-cells = <2>;
+		#global-interrupts = <1>;
+		interrupts = <GIC_SPI 674 IRQ_TYPE_LEVEL_HIGH>,		/* (R) */
+			     <GIC_SPI 678 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 679 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 680 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 681 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 682 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 683 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 684 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 685 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 686 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 687 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 688 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 422 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 476 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 574 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 575 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 576 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 577 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 660 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 662 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 665 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 666 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 667 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 669 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 670 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 700 IRQ_TYPE_LEVEL_HIGH>;
+
+		clocks = <&gpucc GPU_CC_HLOS1_VOTE_GPU_SMMU_CLK>;
+		clock-names = "hlos";
+
+		power-domains = <&gpucc GPU_CC_CX_GDSC>;
+		dma-coherent;
+	};
+
+	gmu: gmu@3d37000 {
+		compatible = "qcom,adreno-gmu-830.0", "qcom,adreno-gmu";
+		reg = <0x0 0x03d37000 0x0 0x68000>;		/* (R) */
+		reg-names = "gmu";
+
+		interrupts = <GIC_SPI 304 IRQ_TYPE_LEVEL_HIGH>,		/* (R) */
+			     <GIC_SPI 305 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "hfi", "gmu";
+
+		clocks = <&gpucc GPU_CC_AHB_CLK>,
+			 <&gpucc GPU_CC_CX_GMU_CLK>,
+			 <&gpucc GPU_CC_CXO_CLK>,
+			 <&gcc GCC_DDRSS_GPU_AXI_CLK>,
+			 <&gcc GCC_GPU_GEMNOC_GFX_CLK>,
+			 <&gpucc GPU_CC_HUB_CX_INT_CLK>;
+		clock-names = "ahb", "gmu", "cxo", "axi", "memnoc", "hub";
+
+		power-domains = <&gpucc GPU_CC_CX_GDSC>;
+		power-domain-names = "cx";
+
+		iommus = <&adreno_smmu 5 0x0>;
+		qcom,qmp = <&aoss_qmp>;
+
+		operating-points-v2 = <&gmu_opp_table>;
+
+		gmu_opp_table: opp-table {
+			compatible = "operating-points-v2";
+
+			opp-500000000 {
+				opp-hz = /bits/ 64 <500000000>;		/* (R) */
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+			};
+
+			opp-649267200 {
+				opp-hz = /bits/ 64 <649267200>;		/* (R) */
+				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
+			};
+		};
+	};
+
+	gpu: gpu@3d00000 {
+		compatible = "qcom,adreno-44050001", "qcom,adreno";
+		reg = <0x0 0x03d00000 0x0 0x40000>,		/* (R) */
+		      <0x0 0x03d9e000 0x0 0x2000>,
+		      <0x0 0x03d61000 0x0 0x3000>;
+		reg-names = "kgsl_3d0_reg_memory", "cx_mem", "cx_dbgc";
+
+		interrupts = <GIC_SPI 300 IRQ_TYPE_LEVEL_HIGH>;		/* (R) */
+
+		iommus = <&adreno_smmu 0 0x0>,
+			 <&adreno_smmu 1 0x0>;
+
+		operating-points-v2 = <&gpu_opp_table>;
+
+		qcom,gmu = <&gmu>;
+		#cooling-cells = <2>;
+
+		interconnects = <&gem_noc MASTER_GFX3D QCOM_ICC_TAG_ALWAYS
+				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
+		interconnect-names = "gfx-mem";
+
+		status = "okay";
+
+		gpu_zap_shader: zap-shader {
+			memory-region = <&gpu_micro_code_mem>;
+		};
+
+		/*
+		 * Provisional OPP table (speed-bin 0xbe, the lowest fuse
+		 * bin, 11 levels 160-900 MHz from stock qcom,gpu-pwrlevels;
+		 * frequencies and DDR peaks are stock values, the
+		 * opp-level ladder is mapped positionally after sm8650 and
+		 * MUST be validated on a real device before any merge.
+		 */
+		gpu_opp_table: opp-table {
+			compatible = "operating-points-v2-adreno",
+				     "operating-points-v2";
+
+			opp-900000000 {
+				opp-hz = /bits/ 64 <900000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_NOM_L1>;
+				opp-peak-kBps = <18597656>;
+			};
+
+			opp-832000000 {
+				opp-hz = /bits/ 64 <832000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_NOM>;
+				opp-peak-kBps = <16500000>;
+			};
+
+			opp-734000000 {
+				opp-hz = /bits/ 64 <734000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L2>;
+				opp-peak-kBps = <14398437>;
+			};
+
+			opp-660000000 {
+				opp-hz = /bits/ 64 <660000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+				opp-peak-kBps = <12449218>;
+			};
+
+			opp-607000000 {
+				opp-hz = /bits/ 64 <607000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L0>;
+				opp-peak-kBps = <10687500>;
+			};
+
+			opp-525000000 {
+				opp-hz = /bits/ 64 <525000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
+				opp-peak-kBps = <8171875>;
+			};
+
+			opp-443000000 {
+				opp-hz = /bits/ 64 <443000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_L1>;
+				opp-peak-kBps = <6671875>;
+			};
+
+			opp-389000000 {
+				opp-hz = /bits/ 64 <389000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+				opp-peak-kBps = <6074218>;
+			};
+
+			opp-342000000 {
+				opp-hz = /bits/ 64 <342000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D0>;
+				opp-peak-kBps = <5285156>;
+			};
+
+			opp-222000000 {
+				opp-hz = /bits/ 64 <222000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+				opp-peak-kBps = <2136718>;
+			};
+
+			opp-160000000 {
+				opp-hz = /bits/ 64 <160000000>;
+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D2>;
+				opp-peak-kBps = <781250>;
+			};
+		};
+	};
 };
