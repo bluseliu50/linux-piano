@@ -348,9 +348,23 @@ int qcom_q6v5_init(struct qcom_q6v5 *q6v5, struct platform_device *pdev,
 	}
 
 	q6v5->path = devm_of_icc_get(&pdev->dev, NULL);
-	if (IS_ERR(q6v5->path))
-		return dev_err_probe(&pdev->dev, PTR_ERR(q6v5->path),
-				     "failed to acquire interconnect path\n");
+	if (IS_ERR(q6v5->path)) {
+		ret = PTR_ERR(q6v5->path);
+		/*
+		 * piano bring-up: the stock vendor nodes we overlay do not
+		 * always carry a resolvable interconnect path, and PAS
+		 * bring-up does not require bandwidth voting. Degrade to
+		 * path == NULL (icc_set_bw treats NULL as a no-op) instead
+		 * of failing probe — same posture as the dwc3-qcom icc
+		 * degrade on this branch.
+		 */
+		if (ret != -ENODEV && ret != -ENOENT)
+			return dev_err_probe(&pdev->dev, ret,
+					     "failed to acquire interconnect path\n");
+		q6v5->path = NULL;
+		dev_warn(&pdev->dev,
+			 "no interconnect path, bandwidth voting disabled\n");
+	}
 
 	return 0;
 }
