@@ -79,6 +79,8 @@ obj-$(CONFIG_PINCTRL_SM8550) += pinctrl-sm8550.o
 obj-$(CONFIG_PINCTRL_SM8550_LPASS_LPI) += pinctrl-sm8550-lpass-lpi.o
 obj-$(CONFIG_PINCTRL_SM8650) += pinctrl-sm8650.o
 obj-$(CONFIG_PINCTRL_SM8650_LPASS_LPI) += pinctrl-sm8650-lpass-lpi.o
+obj-$(CONFIG_PINCTRL_SUN) += pinctrl-sun.o
+
 obj-$(CONFIG_PINCTRL_SM8750) += pinctrl-sm8750.o
 obj-$(CONFIG_PINCTRL_SC8280XP_LPASS_LPI) += pinctrl-sc8280xp-lpass-lpi.o
 obj-$(CONFIG_PINCTRL_LPASS_LPI) += pinctrl-lpass-lpi.o

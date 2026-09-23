@@ -569,6 +569,14 @@ config PINCTRL_SM8750
 	  Qualcomm Technologies Inc TLMM block found on the Qualcomm
 	  Technologies Inc SM8750 platform.
 
+config PINCTRL_SUN
+	tristate "Qualcomm Sun pin controller driver"
+	depends on ARM64 || COMPILE_TEST
+	default ARCH_QCOM
+	help
+	  Qualcomm Technologies Inc Sun TLMM block found on SM8750
+	  devices using the qcom,sun-tlmm device-tree compatible.
+
 config PINCTRL_X1E80100
 	tristate "Qualcomm X1E80100 pin controller driver"
 	depends on ARM64 || COMPILE_TEST
