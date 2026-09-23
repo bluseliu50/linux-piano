@@ -13,6 +13,10 @@
 
 #define REG_BASE 0x100000
 #define REG_SIZE 0x1000
+/* Sun exposes the normal TLMM interrupt wake bits used by the mainline
+ * MSM GPIO IRQ core.  The downstream tree also has an MPM-only wake API,
+ * but no current piano consumer calls that vendor API; keep this port on
+ * the upstream GPIO IRQ contract rather than widening the core ABI. */
 #define PINGROUP(id, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11) \
 	{ \
 		.grp = PINCTRL_PINGROUP("gpio" #id, \
