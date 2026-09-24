@@ -608,10 +608,24 @@ static int qcom_pas_init_regulator(struct qcom_pas *pas)
 {
 	pas->cx_supply = devm_regulator_get_optional(pas->dev, "cx");
 	if (IS_ERR(pas->cx_supply)) {
-		if (PTR_ERR(pas->cx_supply) == -ENODEV)
+		/*
+		 * piano bring-up: the stock vendor remoteproc nodes carry
+		 * cx-supply/mx-supply phandles pointing at downstream
+		 * rpmh-arc-regulator nodes that no mainline driver binds, so
+		 * the lookup returns -EPROBE_DEFER forever.  Voltage/rail
+		 * voting is done through the power-domains path instead, so
+		 * degrade to "no supply" the same way the dwc3-qcom and
+		 * qcom_q6v5 icc paths do on this branch.
+		 */
+		if (PTR_ERR(pas->cx_supply) == -ENODEV ||
+		    PTR_ERR(pas->cx_supply) == -EPROBE_DEFER) {
+			if (PTR_ERR(pas->cx_supply) == -EPROBE_DEFER)
+				dev_warn(pas->dev,
+					 "cx supply unresolved, ignoring (power-domains used instead)\n");
 			pas->cx_supply = NULL;
-		else
+		} else {
 			return PTR_ERR(pas->cx_supply);
+		}
 	}
 
 	if (pas->cx_supply)
@@ -619,10 +633,17 @@ static int qcom_pas_init_regulator(struct qcom_pas *pas)
 
 	pas->px_supply = devm_regulator_get_optional(pas->dev, "px");
 	if (IS_ERR(pas->px_supply)) {
-		if (PTR_ERR(pas->px_supply) == -ENODEV)
+		/* piano: see the cx comment above — vendor px/mx supplies point at
+		 * unbound downstream rpmh-arc-regulator nodes. */
+		if (PTR_ERR(pas->px_supply) == -ENODEV ||
+		    PTR_ERR(pas->px_supply) == -EPROBE_DEFER) {
+			if (PTR_ERR(pas->px_supply) == -EPROBE_DEFER)
+				dev_warn(pas->dev,
+					 "px supply unresolved, ignoring (power-domains used instead)\n");
 			pas->px_supply = NULL;
-		else
+		} else {
 			return PTR_ERR(pas->px_supply);
+		}
 	}
 
 	return 0;
@@ -1637,6 +1658,51 @@ static const struct qcom_pas_data sm8750_mpss_resource = {
 	.region_assign_vmid = QCOM_SCM_VMID_MSS_MSA,
 };
 
+static const struct qcom_pas_data sm8750_adsp_resource = {
+	.crash_reason_smem = 423,
+	.firmware_name = "adsp.mdt",
+	.dtb_firmware_name = "adsp_dtb.mdt",
+	.pas_id = 1,
+	.dtb_pas_id = 0x24,
+	.minidump_id = 5,
+	.auto_boot = true,
+	.proxy_pd_names = (char*[]){
+		"lcx",
+		"lmx",
+		NULL
+	},
+	.load_state = "adsp",
+	.ssr_name = "lpass",
+	.sysmon_name = "adsp",
+	.ssctl_id = 0x14,
+	.smem_host_id = 2,
+};
+
+static const struct qcom_pas_data sm8750_cdsp_resource = {
+	.crash_reason_smem = 601,
+	.firmware_name = "cdsp.mdt",
+	.dtb_firmware_name = "cdsp_dtb.mdt",
+	.pas_id = 18,
+	.dtb_pas_id = 0x25,
+	.minidump_id = 7,
+	.auto_boot = true,
+	.proxy_pd_names = (char*[]){
+		"cx",
+		"mxc",
+		"nsp",
+		NULL
+	},
+	.load_state = "cdsp",
+	.ssr_name = "cdsp",
+	.sysmon_name = "cdsp",
+	.ssctl_id = 0x17,
+	.smem_host_id = 5,
+	.region_assign_idx = 2,
+	.region_assign_count = 1,
+	.region_assign_shared = true,
+	.region_assign_vmid = QCOM_SCM_VMID_CDSP,
+};
+
 static const struct of_device_id qcom_pas_of_match[] = {
 	{ .compatible = "qcom,eliza-adsp-pas", .data = &sm8550_adsp_resource },
 	{ .compatible = "qcom,milos-adsp-pas", .data = &sm8550_adsp_resource },
@@ -1712,6 +1778,12 @@ static const struct of_device_id qcom_pas_of_match[] = {
 	{ .compatible = "qcom,sm8650-cdsp-pas", .data = &sm8650_cdsp_resource },
 	{ .compatible = "qcom,sm8650-mpss-pas", .data = &sm8650_mpss_resource },
 	{ .compatible = "qcom,sm8750-mpss-pas", .data = &sm8750_mpss_resource },
+	/* piano: the stock sun vendor tree names these qcom,sun-*-pas; accept
+	 * both spellings so the mainline driver can bind the vendor nodes. */
+	{ .compatible = "qcom,sm8750-adsp-pas", .data = &sm8750_adsp_resource },
+	{ .compatible = "qcom,sm8750-cdsp-pas", .data = &sm8750_cdsp_resource },
+	{ .compatible = "qcom,sun-adsp-pas", .data = &sm8750_adsp_resource },
+	{ .compatible = "qcom,sun-cdsp-pas", .data = &sm8750_cdsp_resource },
 	{ .compatible = "qcom,x1e80100-adsp-pas", .data = &x1e80100_adsp_resource },
 	{ .compatible = "qcom,x1e80100-cdsp-pas", .data = &x1e80100_cdsp_resource },
 	{ },
