@@ -884,7 +884,14 @@ static int qcom_pas_probe(struct platform_device *pdev)
 	}
 
 	rproc->has_iommu = of_property_present(pdev->dev.of_node, "iommus");
-	rproc->auto_boot = desc->auto_boot;
+	/*
+	 * Some vendor firmware revisions touch shared PMIC/display resources
+	 * during ADSP handover.  Let the device tree opt out of the descriptor's
+	 * historical auto-boot default so bring-up can probe the remoteproc and
+	 * inspect its state before starting firmware.
+	 */
+	rproc->auto_boot = desc->auto_boot &&
+		!of_property_read_bool(pdev->dev.of_node, "qcom,no-auto-boot");
 	rproc_coredump_set_elf_info(rproc, ELFCLASS32, EM_NONE);
 
 	pas = rproc->priv;
