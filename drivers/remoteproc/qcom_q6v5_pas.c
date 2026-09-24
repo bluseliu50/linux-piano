@@ -592,21 +592,36 @@ static const struct rproc_ops qcom_pas_minidump_ops = {
 static int qcom_pas_init_clock(struct qcom_pas *pas)
 {
 	/*
-	 * piano: the stock sun vendor tree wires adsp/cdsp "xo" to a clock
-	 * provider mainline does not bind, so the mandatory get() would keep
-	 * both remoteprocs in -EPROBE_DEFER forever.  clk_prepare_enable()
-	 * and clk_disable_unprepare() are both NULL-safe, so treat it as
-	 * optional and let the firmware load continue.
+	 * piano: the stock sun vendor tree wires adsp/cdsp "xo" (and often
+	 * "aggre2") to clock providers mainline does not bind.  The node DOES
+	 * list the clock, so the lookup returns -EPROBE_DEFER rather than
+	 * -ENOENT and devm_clk_get_optional() alone does not help.  Deferring
+	 * here is fatal to the whole bring-up: the remoteproc never probes, so
+	 * pmic-glink, battmgr and the ADSP audio chain never come up either.
+	 * clk_prepare_enable() and clk_disable_unprepare() are NULL-safe, so
+	 * continue without the clock and let the firmware load proceed.
 	 */
 	pas->xo = devm_clk_get_optional(pas->dev, "xo");
-	if (IS_ERR(pas->xo))
-		return dev_err_probe(pas->dev, PTR_ERR(pas->xo),
-				     "failed to get xo clock");
+	if (IS_ERR(pas->xo)) {
+		if (PTR_ERR(pas->xo) == -EPROBE_DEFER) {
+			dev_warn(pas->dev, "xo clock provider unbound, continuing without it\n");
+			pas->xo = NULL;
+		} else {
+			return dev_err_probe(pas->dev, PTR_ERR(pas->xo),
+					     "failed to get xo clock");
+		}
+	}
 
 	pas->aggre2_clk = devm_clk_get_optional(pas->dev, "aggre2");
-	if (IS_ERR(pas->aggre2_clk))
-		return dev_err_probe(pas->dev, PTR_ERR(pas->aggre2_clk),
-				     "failed to get aggre2 clock");
+	if (IS_ERR(pas->aggre2_clk)) {
+		if (PTR_ERR(pas->aggre2_clk) == -EPROBE_DEFER) {
+			dev_warn(pas->dev, "aggre2 clock provider unbound, continuing without it\n");
+			pas->aggre2_clk = NULL;
+		} else {
+			return dev_err_probe(pas->dev, PTR_ERR(pas->aggre2_clk),
+					     "failed to get aggre2 clock");
+		}
+	}
 
 	return 0;
 }
