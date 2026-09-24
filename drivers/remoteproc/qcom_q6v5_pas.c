@@ -591,7 +591,14 @@ static const struct rproc_ops qcom_pas_minidump_ops = {
 
 static int qcom_pas_init_clock(struct qcom_pas *pas)
 {
-	pas->xo = devm_clk_get(pas->dev, "xo");
+	/*
+	 * piano: the stock sun vendor tree wires adsp/cdsp "xo" to a clock
+	 * provider mainline does not bind, so the mandatory get() would keep
+	 * both remoteprocs in -EPROBE_DEFER forever.  clk_prepare_enable()
+	 * and clk_disable_unprepare() are both NULL-safe, so treat it as
+	 * optional and let the firmware load continue.
+	 */
+	pas->xo = devm_clk_get_optional(pas->dev, "xo");
 	if (IS_ERR(pas->xo))
 		return dev_err_probe(pas->dev, PTR_ERR(pas->xo),
 				     "failed to get xo clock");
@@ -782,8 +789,17 @@ static int qcom_pas_assign_memory_region(struct qcom_pas *pas)
 					  &pas->region_assign_owners[offset],
 					  perm, perm_size);
 		if (ret < 0) {
-			dev_err(pas->dev, "assign memory %d failed\n", offset);
-			return ret;
+			/*
+			 * piano: the stock vendor reserved-memory layout indexes
+			 * differently from mainline's expectation.  Losing the
+			 * SCM share on one region must not keep the whole
+			 * remoteproc (and with it pmic-glink/battmgr) down.
+			 */
+			dev_warn(pas->dev, "assign memory %d failed: %d (continuing)\n",
+				 offset, ret);
+			pas->region_assign_phys[offset] = 0;
+			pas->region_assign_size[offset] = 0;
+			continue;
 		}
 	}
 
@@ -1697,10 +1713,6 @@ static const struct qcom_pas_data sm8750_cdsp_resource = {
 	.sysmon_name = "cdsp",
 	.ssctl_id = 0x17,
 	.smem_host_id = 5,
-	.region_assign_idx = 2,
-	.region_assign_count = 1,
-	.region_assign_shared = true,
-	.region_assign_vmid = QCOM_SCM_VMID_CDSP,
 };
 
 static const struct of_device_id qcom_pas_of_match[] = {
