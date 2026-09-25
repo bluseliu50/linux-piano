@@ -1640,15 +1640,11 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	/* If the device follows a DRM panel, configure panel follower */
 	if (drm_is_panel_follower(&client->dev)) {
 		ts->panel_follower.funcs = &nt36xxx_panel_follower_funcs;
-		devm_drm_panel_add_follower(&client->dev, &ts->panel_follower);
+		ret = devm_drm_panel_add_follower(&client->dev, &ts->panel_follower);
+		if (ret)
+			goto err_panelwait_failed;
 	}
 #endif
-
-	//---eng reset before TP_RESX high
-	nvt_eng_reset();
-
-	// need 10ms delay after POR(power on reset)
-	msleep(10);
 
 	while (!ts->panel_on) {
 		if (retry_count > 5) {
@@ -1660,6 +1656,12 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		retry_count++;
 		msleep(200);
 	}
+
+	//---eng reset after panel preparation
+	nvt_eng_reset();
+
+	// need 10ms delay after POR(power on reset)
+	usleep_range(10000, 11000);
 
 	//---check chip version trim---
 	ret = nvt_ts_check_chip_ver_trim_loop();
