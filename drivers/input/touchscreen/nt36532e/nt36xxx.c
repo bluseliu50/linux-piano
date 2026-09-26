@@ -1608,6 +1608,9 @@ static int32_t nvt_ts_check_chip_ver_trim(struct nvt_ts_hw_reg_addr_info hw_regs
 		CTP_SPI_READ(ts->client, buf, 7);
 		NVT_LOG("buf[1]=0x%02X, buf[2]=0x%02X, buf[3]=0x%02X, buf[4]=0x%02X, buf[5]=0x%02X, buf[6]=0x%02X\n",
 			buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
+		if (retry == 1)
+			NVT_INFO("trim 0x%06x reads %*ph\n", ts->chip_ver_trim_addr,
+				 NVT_ID_BYTE_MAX, buf + 1);
 
 		// compare read chip id on supported list
 		for (list = 0; list < (sizeof(trim_id_table) / sizeof(struct nvt_ts_trim_id_table)); list++) {
